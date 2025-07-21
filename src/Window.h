@@ -1,90 +1,99 @@
 #pragma once
 
+#include "Preferences.h"
+
 #define ON HIGH
 #define OFF LOW
 
 class Window
 {
 private:
+    int _changelevel;         // количество шагов закрытия/открытия окна (>0 - открытие, <0 - закрытие)
+    unsigned long _timeopen;  // время выключения открытия окон
+    unsigned long _timeclose; // время выключения закрытия окон
+    int _level = 0;           // уровень открытия
+    int _opentimewindow;      // полное время  работы механизма, сек
+    int _relayUp, _relayDown;
+    MB11016P_ESP *__relay;
+    Preferences *flash_;
 
-    // int changelevel_;         // количество шагов закрытия/открытия окна (>0 - открытие, <0 - закрытие)
-    unsigned long timeopen_;  // время выключения открытия окон
-    unsigned long timeclose_; // время выключения закрытия окон
-    int level_ = 0;           // уровень открытия
-    int opentimewindow_;      // полное время  работы механизма, сек
-    int relayUp_, relayDown_;
-    MB11016P_ESP *relay__;
+    void save_level(int level, int ID)
+    {
+        flash_->putUInt(String("LevelWindow" + String(ID)).c_str(), level); // запись уровня открытия окна при его изменении.
+    }
 
 public:
-    Window(MB11016P_ESP *mb11016p, int relayUp, int relayDown, int opentimewindow) : opentimewindow_(opentimewindow),  relayUp_(relayUp), relayDown_(relayDown)
+    Window(MB11016P_ESP *mb11016p, int relayUp, int relayDown, int opentimewindow, Preferences *flash) : 
+                    _opentimewindow(opentimewindow), _relayUp(relayUp), _relayDown(relayDown), flash_(flash)
     {
-        relay__ = mb11016p;
+        __relay = mb11016p;
     }
 
     int getlevel() const
     {
-        return level_;
+        return _level;
     }
-    //изменение времени работы механизма
+    // изменение времени работы механизма
     void setopentimewindow(int opentimewindow)
     {
-        if (0 == level_ && !getWindowDown())
-            opentimewindow_ = opentimewindow;
-            // Serial.println(opentimewindow);
+        if (0 == _level && !getWindowDown())
+            _opentimewindow = opentimewindow;
     }
 
     int getWindowUp() const
     {
-        return relay__->getRelay(relayUp_);
+        return __relay->getRelay(_relayUp);
     }
 
     int getWindowDown() const
     {
-        return relay__->getRelay(relayDown_);
+        return __relay->getRelay(_relayDown);
     }
 
     int getOpenTimeWindow() const
     {
-        return opentimewindow_;
+        return _opentimewindow;
     }
 
-    //включение механизма открытия окна
-    void openWindow(int changelevel)
+    // включение механизма открытия окна
+    void openWindow(int changelevel, int ID)
     {
-        if (changelevel + level_ > 100)
-            changelevel = 100 - level_;
-        if (relay__->getRelay(relayUp_) == OFF && relay__->getRelay(relayDown_) == OFF)
+        if (changelevel + _level > 100)
+            changelevel = 100 - _level;
+        if (__relay->getRelay(_relayUp) == OFF && __relay->getRelay(_relayDown) == OFF)
         {
-            relay__->setOn(relayUp_);
-            timeopen_ = millis() + 10 * (static_cast<unsigned long>(changelevel * opentimewindow_));
-            level_ = constrain(level_ + changelevel, 0, 100);
+            __relay->setOn(_relayUp);
+            _timeopen = millis() + 10 * (static_cast<unsigned long>(changelevel * _opentimewindow));
+            _level = constrain(_level + changelevel, 0, 100);
+            save_level(_level, ID);
         }
     }
-    //включение механизма закрытия окна
-    void closeWindow(int changelevel)
+    // включение механизма закрытия окна
+    void closeWindow(int changelevel, int ID)
     {
-        if (relay__->getRelay(relayUp_) == OFF && relay__->getRelay(relayDown_) == OFF)
+        if (__relay->getRelay(_relayUp) == OFF && __relay->getRelay(_relayDown) == OFF)
         {
-            relay__->setOn(relayDown_);
-            timeclose_ = millis() + 10 * (static_cast<unsigned long>(changelevel * opentimewindow_));
-            level_ = constrain(level_ - changelevel, 0, 100);
+            __relay->setOn(_relayDown);
+            _timeclose = millis() + 10 * (static_cast<unsigned long>(changelevel * _opentimewindow));
+            _level = constrain(_level - changelevel, 0, 100);
+            save_level(_level, ID);
         }
     }
 
-    //выключение механизма открытия и закрытия
+    // выключение механизма открытия и закрытия
     void off() const
     {
-        if (timeopen_ < millis())
-            relay__->setOff(relayUp_);
-        if (timeclose_ < millis())
-            relay__->setOff(relayDown_);
+        if (_timeopen < millis())
+            __relay->setOff(_relayUp);
+        if (_timeclose < millis())
+            __relay->setOff(_relayDown);
     }
     unsigned long getOpenTime() const
     {
-        return timeopen_;
+        return _timeopen;
     }
     unsigned long getCloseTime() const
     {
-        return timeclose_;
+        return _timeclose;
     }
 };

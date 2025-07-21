@@ -1,4 +1,6 @@
 // релейный модуль
+#pragma once
+
 #include <ModbusRTU.h>
 
 namespace MB11016P

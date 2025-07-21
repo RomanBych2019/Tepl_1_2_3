@@ -9,22 +9,20 @@
 #include <ModbusRTU.h>
 #include <ModbusIP_ESP8266.h>
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include "ESPAsyncWebServer.h"
 #include "Preferences.h"
-#include <AsyncElegantOTA.h>
 #include <freertos/task.h>
 #include <FreeRTOSConfig.h>
+#include <SPIFFS.h>
+#include <GyverPortal.h>
+#include <EEPROM.h>
 
 #include "MB11016P_ESP.h"
-#include "MB1108A_ESP.h"
 #include "heat.h"
 #include "Teplica.h"
 #include "NEXTION.h"
 #include "SoilSensor.h"
 
 Preferences flash;
-AsyncWebServer server(80);
 
 #define RXDNEX 23 // плата в теплице
 #define TXDNEX 22 // плата в теплице
@@ -42,15 +40,25 @@ const double RED = 55688;
 const double GREEN = 2016;
 const double BLUE = 1566;
 
+
+#define LittleFS SPIFFS
+GyverPortal ui(&LittleFS);
+
 #define DEBUG_WIFI
 
-const String VER = "Ver - 3.0. Date - " + String(__DATE__) + "\r";
+const String VER = "Ver - 4.0. Date - " + String(__DATE__) + "\r";
 int IDSLAVE = 13; // адрес в сети Modbus
 
 String ssid = "yastrebovka";
 String password = "zerNo32_";
-// String ssid = "Home-RP";
-// String password = "12rp1974";
+struct LoginPass
+{
+  char ssid[20];
+  char pass[20];
+};
+const char *names[] = {"T1","T2","T3"};
+LoginPass lp;
+
 
 const uint32_t AIRTIME = 1200000; // длительность проветривания и осушения
 
@@ -202,6 +210,7 @@ int modbusdateWiFi[WiFi_HOLDING_REGS_SIZE];
 unsigned long timesendnextion;
 const unsigned long TIME_UPDATE_MODBUS = 1000;
 long updateNextion;
+bool flag_start = true;
 String pageNextion = "p0";
 int counterMBRead = 0;
 int coun1 = 0;
@@ -219,18 +228,38 @@ ModbusRTU mb_master;
 MB11016P_ESP mb11016p = MB11016P_ESP(&mb_master, 100, 0);
 MB11016P_ESP mbsl8di8ro = MB11016P_ESP(&mb_master, 102, 0); // китайский блок реле (для управления пушкой и тепл.3)
 
-MB1108A_ESP mb1108a = MB1108A_ESP(&mb_master, 101, 3);
 Heat heat = Heat(0, 1, 2, 3, &mbsl8di8ro);
 
 SoilSensor soil1(&mb_master, 1, 9600);
+Sensor_WB_v_3 Tepl1Temperature = Sensor_WB_v_3(4, 0, 0);
+Sensor_WB_v_3 Tepl2Temperature = Sensor_WB_v_3(5, 0, 0);
+Sensor_WB_v_3 Tepl3Temperature = Sensor_WB_v_3(6, 0, 0);
 
-Teplica Tepl1 = Teplica(1, 0, 0, heat.getValve1(), 1, 2, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
-Teplica Tepl2 = Teplica(2, 1, 4, heat.getValve2(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
-Teplica Tepl3 = Teplica(3, 2, 4, heat.getValve3(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mbsl8di8ro, &heat);
+Sensor_WB_v_3 *sensors[3];
+
+Teplica Tepl1 = Teplica(1, &Tepl1Temperature, 0, heat.getValve1(), 9, 10, 30, 20, 40, 60, &mb11016p, &flash);
+Teplica Tepl2 = Teplica(2, &Tepl2Temperature, 4, heat.getValve2(), 5, 6, 30, 20, 40, 60, &mb11016p, &flash);
+Teplica Tepl3 = Teplica(3, &Tepl3Temperature, 4, heat.getValve3(), 5, 6, 30, 20, 40, 60, &mbsl8di8ro, &flash);
+
+// Teplica Tepl1 = Teplica(1, 0, 0, heat.getValve1(), 1, 2, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
+// Teplica Tepl2 = Teplica(2, 1, 4, heat.getValve2(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
+// Teplica Tepl3 = Teplica(3, 2, 4, heat.getValve3(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mbsl8di8ro, &heat);
 
 Teplica *arr_Tepl[3];
 
 Nextion hmi(SerialNextion);
+
+enum Sensor_Modbus
+{
+  err,
+  firm,
+  temper,
+  hum,
+  mberror,
+  SIZE_SENSOR_MODBUS
+};
+
+uint16_t sensor[Sensor_Modbus::SIZE_SENSOR_MODBUS] {};
 
 // void pageNextion_p0();
 void pageNextion_p1(int i);
@@ -255,3 +284,20 @@ void sendNextion(void *pvParameters);
 void readNextion(void *pvParameters);
 void onHMIEvent(String messege, String data, String response);
 
+void update_mbmaster();
+
+void wifiInit();
+void buildLoginPage();
+void buildLoginPage(String wifi);
+void loginPortal();
+void action(GyverPortal &p);
+
+void buildPage();
+void actionPage();
+
+bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void *data)
+{
+  // Serial.printf("result:\t0x%02X\n", event);
+  sensor[Sensor_Modbus::mberror] = event;
+  return true;
+}

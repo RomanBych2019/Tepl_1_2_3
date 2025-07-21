@@ -5,7 +5,6 @@
 
 #include "SoftwareSerial.h"
 #include "Teplica.h"
-#include "MB1108A_ESP.h"
 #include "Heat.h"
 
 #define CMD_READ_TIMEOUT 50
@@ -71,9 +70,8 @@ public:
     }
 
     // вывод данных теплицы 1
-    void inditepl1(Teplica &tepl, Heat &heat, MB1108A_ESP &mb1108a)
+    void inditepl1(Teplica &tepl, Heat &heat)
     {
-        if (!mb1108a.getErrorMB1108A())
         { // ввывод температуры и ошибок датчика температуры
             if (1 == tepl.getSensorStatus())
             {
@@ -93,12 +91,12 @@ public:
                 send("p0.t0.txt", "Er " + String(tepl.getSensorStatus(), HEX));
             }
         }
-        else
-        {
-            send("p0.t0.pco", RED);
-            send("p0.t0.font", 1);
-            send("p0.t0.txt", "Er 108");
-        }
+        // else
+        // {
+        //     send("p0.t0.pco", RED);
+        //     send("p0.t0.font", 1);
+        //     send("p0.t0.txt", "Er 108");
+        // }
         // вывод уставки насос
         send("p0.x1.val", tepl.getSetPump() / 10);
         // вывод уставки дополнительный обогреватель
@@ -123,9 +121,8 @@ public:
     }
 
     // вывод данных теплицы 2
-    void inditepl2(Teplica &tepl, Heat &heat, MB1108A_ESP &mb1108a)
+    void inditepl2(Teplica &tepl, Heat &heat)
     {
-        if (!mb1108a.getErrorMB1108A())
         {
             // ввывод температуры и ошибок датчика температуры
             if (1 == tepl.getSensorStatus())
@@ -146,12 +143,12 @@ public:
                 send("p0.t7.txt", "Er " + String(tepl.getSensorStatus(), HEX));
             }
         }
-        else
-        {
-            send("p0.t7.pco", RED);
-            send("p0.t7.font", 1);
-            send("p0.t7.txt", "Er 108");
-        }
+        // else
+        // {
+        //     send("p0.t7.pco", RED);
+        //     send("p0.t7.font", 1);
+        //     send("p0.t7.txt", "Er 108");
+        // }
         // ввывод уставки насос
         send("p0.x4.val", tepl.getSetPump() / 10);
         // ввывод уставки дополнительный обогреватель
@@ -176,10 +173,8 @@ public:
     }
 
     // вывод данных теплицы 3
-    void inditepl3(Teplica &tepl, Heat &heat, MB1108A_ESP &mb1108a)
+    void inditepl3(Teplica &tepl, Heat &heat)
     {
-        if (!mb1108a.getErrorMB1108A())
-        {
             // ввывод температуры и ошибок датчика температуры
             if (1 == tepl.getSensorStatus())
             {
@@ -198,13 +193,12 @@ public:
                 send("p0.t8.font", 1);
                 send("p0.t8.txt", "Er " + String(tepl.getSensorStatus(), HEX));
             }
-        }
-        else
-        {
-            send("p0.t8.pco", RED);
-            send("p0.t8.font", 1);
-            send("p0.t8.txt", "Er 108");
-        }
+        // else
+        // {
+        //     send("p0.t8.pco", RED);
+        //     send("p0.t8.font", 1);
+        //     send("p0.t8.txt", "Er 108");
+        // }
         // ввывод уставки насос
         send("p0.x8.val", tepl.getSetPump() / 10);
         // ввывод уставки дополнительный обогреватель
@@ -273,13 +267,6 @@ public:
         }
     }
 
-    void page2(int sspeed, int mspeed)
-    {
-    }
-
-    void page3(MB1108A_ESP &water_temper, bool flag)
-    {
-    }
 
 private:
     // отправка на Nextion
