@@ -80,6 +80,11 @@ public:
         }
     }
 
+    void setLevel (uint level)
+    {
+        _level = level;
+    }
+
     // выключение механизма открытия и закрытия
     void off() const
     {

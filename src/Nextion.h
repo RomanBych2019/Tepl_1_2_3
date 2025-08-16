@@ -19,7 +19,7 @@ private:
     SoftwareSerial *_nextionSerial;
     bool _echo; // Response Command Show
     // Callback Function
-    typedef void (*hmiListner)(String messege, String date, String response);
+    typedef void (*hmiListner)(String &messege, String &date, String &response);
     hmiListner listnerCallback;
     SemaphoreHandle_t nexton_mutex;
 
@@ -70,7 +70,7 @@ public:
     }
 
     // вывод данных теплицы 1
-    void inditepl1(Teplica &tepl, Heat &heat)
+    void inditepl1(Teplica &tepl)
     {
         { // ввывод температуры и ошибок датчика температуры
             if (1 == tepl.getSensorStatus())
@@ -79,7 +79,7 @@ public:
                 send("p0.t0.txt", String(tepl.getTemperature() / 100.0, 1));
                 if (tepl.getTemperature() < tepl.getSetHeat())
                     send("p0.t0.pco", BLUE);
-                else if (tepl.getTemperature() > tepl.getSetPump() + 300)
+                else if (tepl.getTemperature() > tepl.getSetWindow() + 100)
                     send("p0.t0.pco", RED);
                 else
                     send("p0.t0.pco", GREEN);
@@ -114,14 +114,12 @@ public:
             send("p0.t3.txt", "H");
         // идикация состояния насоса
         send("p0.p1.pic", tepl.getPump() ? 12 : 11);
-        // идикация состояния дополнительного обогревателя
-        send("p0.p2.pic", tepl.getHeat() && heat.getSatusHeat() ? 12 : 11);
         // вывод уровня открытия окон
         send("p0.h0.val", tepl.getLevel());
     }
 
     // вывод данных теплицы 2
-    void inditepl2(Teplica &tepl, Heat &heat)
+    void inditepl2(Teplica &tepl)
     {
         {
             // ввывод температуры и ошибок датчика температуры
@@ -131,7 +129,7 @@ public:
                 send("p0.t7.txt", String(tepl.getTemperature() / 100.0, 1));
                 if (tepl.getTemperature() < tepl.getSetHeat())
                     send("p0.t7.pco", BLUE);
-                else if (tepl.getTemperature() > tepl.getSetPump() + 300)
+                else if (tepl.getTemperature() > tepl.getSetWindow() + 100)
                     send("p0.t7.pco", RED);
                 else
                     send("p0.t7.pco", GREEN);
@@ -166,14 +164,12 @@ public:
             send("p0.t4.txt", "H");
         // идикация состояния насоса
         send("p0.p3.pic", tepl.getPump() ? 12 : 11);
-        // идикация состояния дополнительного обогревателя (задвижка)
-        send("p0.p4.pic", tepl.getHeat() && heat.getSatusHeat() ? 12 : 11);
         // вывод уровня открытия окон
         send("p0.h1.val", tepl.getLevel());
     }
 
     // вывод данных теплицы 3
-    void inditepl3(Teplica &tepl, Heat &heat)
+    void inditepl3(Teplica &tepl)
     {
             // ввывод температуры и ошибок датчика температуры
             if (1 == tepl.getSensorStatus())
@@ -182,7 +178,7 @@ public:
                 send("p0.t8.txt", String(tepl.getTemperature() / 100.0, 1));
                 if (tepl.getTemperature() < tepl.getSetHeat())
                     send("p0.t8.pco", BLUE);
-                else if (tepl.getTemperature() > tepl.getSetPump() + 300)
+                else if (tepl.getTemperature() > tepl.getSetWindow() + 100)
                     send("p0.t8.pco", RED);
                 else
                     send("p0.t8.pco", GREEN);
@@ -216,8 +212,6 @@ public:
             send("p0.t5.txt", "H");
         // индикация состояния насоса
         send("p0.p5.pic", tepl.getPump() ? 12 : 11);
-        // индикация состояния дополнительного обогревателя (задвижка)
-        send("p0.p6.pic", tepl.getHeat() && heat.getSatusHeat() ? 12 : 11);
         // вывод уровня открытия окон
         send("p0.h2.val", tepl.getLevel());
     }

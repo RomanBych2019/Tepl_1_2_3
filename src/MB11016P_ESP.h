@@ -19,7 +19,7 @@ namespace MB11016P
 class MB11016P_ESP
 {
 private:
-    uint8_t _netadress{}; // адрес устройства в сети Modbus)
+    uint8_t _netadress{};               // адрес устройства в сети Modbus)
     int _quantity{};
     static const int LENG_MB = 17;
     bool _mb11016[LENG_MB] = {};

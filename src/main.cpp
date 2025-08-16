@@ -5,8 +5,12 @@ void setup()
   pinMode(GPIO_NUM_2, OUTPUT);
 
   Serial.begin(115200);
-  Serial.print(__DATE__);
-  hmi.echoEnabled(true);
+  Serial.println();
+  while (Serial.available())
+    yield();
+
+  Serial.println(__DATE__);
+  hmi.echoEnabled(false);
   hmi.hmiCallBack(onHMIEvent);
 
   hmi("rest");
@@ -14,7 +18,7 @@ void setup()
   wifiInit();
 
   if (!LittleFS.begin())
-    Serial.println("FS Error");
+    log_e("FS Error");
 
   ui.attachBuild(buildPage);
   ui.attach(actionPage);
@@ -82,7 +86,7 @@ void setup()
 
   flash.begin("eerom", false);
   MbMasterSerial.begin(flash.getInt("mspeed", 19200), SERIAL_8N1, RXDMASTER, TXDMASTER, false); // Modbus Master
-  MbSlaveSerial.begin(flash.getInt("sspeed", 19200));                                          // Modbus Slave
+  MbSlaveSerial.begin(flash.getInt("sspeed", 19200));                                           // Modbus Slave
   SerialNextion.begin(19200, SWSERIAL_8N1, RXDNEX, TXDNEX, false);
 
   mbsl8di8ro.setAdress(flash.getInt("heat_adr", 102));
@@ -115,7 +119,7 @@ void setup()
   // считывание параметров установок теплиц из памяти
   for (int i = 0; i < 3; i++)
   {
-    uint t = flash.getUInt(String("SetPump" + String(arr_Tepl[i]->getId())).c_str(), 500);
+     uint t = flash.getUInt(String("SetPump" + String(arr_Tepl[i]->getId())).c_str(), 500);
     arr_Tepl[i]->setSetPump(t);
     t = flash.getUInt(String("SetHeat" + String(arr_Tepl[i]->getId())).c_str(), 300);
     arr_Tepl[i]->setSetHeat(t);
@@ -128,17 +132,21 @@ void setup()
   }
 
   incStr = flash.getString("adr", "");
+  
   pars_str_adr(incStr);
 
-  // первоначальное закрытие окон
-  Tepl1.setWindowlevel(-100);
-  Tepl2.setWindowlevel(-100);
-  Tepl3.setWindowlevel(-100);
+  for (Teplica *t : arr_Tepl)
+  {
+    uint tmp = flash.getUInt("LevelWindow" + t->getId(), 0);
+    t->setWindowlevel(tmp);
+  }
+
+  updateNextion = millis();
 
   xTaskCreatePinnedToCore(
       update_WiFiConnect,        /* Обновление WiFi */
       "Task_update_WiFiConnect", /* Название задачи */
-      4096,                      /* Размер стека задачи */
+      9216,                      /* Размер стека задачи */
       NULL,                      /* Параметр задачи */
       1,                         /* Приоритет задачи */
       NULL,                      /* Идентификатор задачи, чтобы ее можно было отслеживать */
@@ -147,16 +155,16 @@ void setup()
   xTaskCreatePinnedToCore(
       updateMB,        /* Обновление состояния реле блока MB110 */
       "Task_updateMB", /* Название задачи */
-      4096,            /* Размер стека задачи */
+      9216,            /* Размер стека задачи */
       NULL,            /* Параметр задачи */
       3,               /* Приоритет задачи */
       NULL,            /* Идентификатор задачи, чтобы ее можно было отслеживать */
-      tskNO_AFFINITY); /* Ядро для выполнения задачи (0) */
+      1);              /* Ядро для выполнения задачи (0) */
 
   xTaskCreatePinnedToCore(
       sendNextion,        /* обновление данных HMI */
       "Task_sendNextion", /* Название задачи */
-      8192,               /* Размер стека задачи */
+      9216,               /* Размер стека задачи */
       NULL,               /* Параметр задачи */
       4,                  /* Приоритет задачи */
       NULL,               /* Идентификатор задачи, чтобы ее можно было отслеживать */
@@ -165,64 +173,80 @@ void setup()
   xTaskCreatePinnedToCore(
       readNextion,        /* чтение данных от HMI */
       "Task_readNextion", /* Название задачи */
-      8192,               /* Размер стека задачи */
+      9216,               /* Размер стека задачи */
       NULL,               /* Параметр задачи */
       2,                  /* Приоритет задачи */
       NULL,               /* Идентификатор задачи, чтобы ее можно было отслеживать */
-      tskNO_AFFINITY);
-
-  updateNextion = millis();
+      1);
 
   xTaskCreatePinnedToCore(
       updateGreenHouse,        /* Регулировка окон*/
       "Task_updateGreenHouse", /* Название задачи */
-      10000,                   /* Размер стека задачи */
+      9216,                    /* Размер стека задачи */
       NULL,                    /* Параметр задачи */
-      2,                       /* Приоритет задачи */
-      &Task_updateGreenHouse,  /* Идентификатор задачи, чтобы ее можно было отслеживать */
-      tskNO_AFFINITY);
+      5,                       /* Приоритет задачи */
+      NULL,                    /* Идентификатор задачи, чтобы ее можно было отслеживать */
+      1);
+
+  xTaskCreatePinnedToCore(
+      calibrateWindows,        /*  Калибровка нулевого положения окон */
+      "Task_calibrateWindows", /* Название задачи */
+      9216,                    /* Размер стека задачи */
+      NULL,                    /* Параметр задачи */
+      10,                      /* Приоритет задачи */
+      NULL,                    /* Идентификатор задачи, чтобы ее можно было отслеживать */
+      1);
+
+  xTaskCreatePinnedToCore(
+      tickWindows,        /*  Калибровка нулевого положения окон */
+      "Task_tickWindows", /* Название задачи */
+      9216,               /* Размер стека задачи */
+      NULL,               /* Параметр задачи */
+      7,                  /* Приоритет задачи */
+      NULL,               /* Идентификатор задачи, чтобы ее можно было отслеживать */
+      1);
 }
 
 void loop()
 {
-  if (flag_start) // установка окон в положение записанное в последний раз перед выключением (один раз после перезагрузки)
-  {
-    if (!Tepl1.getWindowDown() && !Tepl2.getWindowDown() && !Tepl3.getWindowDown())
-    {
-      for (Teplica *t : arr_Tepl)
-      {
-        int tmp = flash.getUInt(String("LevelWindow" + String(t->getId())).c_str(), 0);
-        t->setWindowlevel(tmp);
-      }
-      flag_start = false;
-    }
-  }
   ui.tick();
   saveOutModBusArr();
   slave.task();
   slaveWiFi.task();
-  heat.update();
   controlScada();
-  if (millis() > 10000)
-    for (Teplica *t : arr_Tepl)
-    {
-      t->updateWorkWindows();
-      if (1 == t->getSensorStatus())
-        t->regulationPump(t->getTemperature());
-    }
 }
+
 
 void readNextion(void *pvParameters)
 {
   for (;;)
   {
     hmi.listen();
-    // vPrintString("readNextion");
-    // vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(TIME_UPDATE_HMI));
     vTaskDelay(pdMS_TO_TICKS(TIME_UPDATE_HMI));
   }
   vTaskDelete(NULL);
 }
+
+
+void tickWindows(void *pvParameters)
+{
+  for (;;)
+  {
+    if (millis() > 10000)
+      for (Teplica *t : arr_Tepl)
+      {
+        t->updateWorkWindows();
+        if (Sensor_WB_v_3::NO_ERROR == t->getSensorStatus())
+          t->regulationPump(t->getTemperature());
+      }
+
+    // viewLoop();
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+  vTaskDelete(NULL);
+}
+
 
 void sendNextion(void *pvParameters)
 {
@@ -230,7 +254,6 @@ void sendNextion(void *pvParameters)
   {
     if (pageNextion == "p0")
     {
-      // TimingUtil test("p0"); // тестирование времени вывода
       coun1 = 0;
       // вывод данных теплицы 1
       indiTepl1();
@@ -239,13 +262,9 @@ void sendNextion(void *pvParameters)
       // вывод данных теплицы 3
       indiTepl3();
       // вывод данных о работе дизельного обогревателя
-      indiGas();
     }
     else if (pageNextion == "p1_0")
-    {
       pageNextion_p1(0);
-      // TimingUtil test("p1_0"); //тестирование времени вывода
-    }
     else if (pageNextion == "p1_1")
       pageNextion_p1(1);
     else if (pageNextion == "p1_2")
@@ -255,8 +274,6 @@ void sendNextion(void *pvParameters)
     else if (pageNextion == "p3")
       pageNextion_p3();
     digitalWrite(GPIO_NUM_2, !digitalRead(GPIO_NUM_2));
-    // vPrintString("sendNextion");
-    // vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(TIME_UPDATE_HMI));
     vTaskDelay(pdMS_TO_TICKS(TIME_UPDATE_HMI));
   }
   vTaskDelete(NULL);
@@ -273,11 +290,11 @@ void updateMB(void *pvParameters)
       {
         mb_master.readIreg(_sensor->getAdress(), 0, sensor, 3, cbRead);
         update_mbmaster();
+
         if (!sensor[Sensor_Modbus::mberror])
         {
           _sensor->setTemperature(static_cast<int>(sensor[Sensor_WB_v_3::Sensor_Data::temperature]) * 10.0);
           _sensor->setHumidity(sensor[Sensor_WB_v_3::Sensor_Data::humidity] * 10.0);
-          // Serial.printf("Температура %d - %d\n", sensorSM200->getAdress(), sensor[Sensor::SensorSM200::temperature]);
           _sensor->setStatus(Sensor_WB_v_3::NO_ERROR);
         }
         else
@@ -295,10 +312,31 @@ void updateMB(void *pvParameters)
   vTaskDelete(NULL);
 }
 
-// парсинг полученых данных от дисплея Nextion
-// Event Occurs when response comes from HMI
-void onHMIEvent(String messege, String data, String response)
+//  калибровка положения полного закрытия окон
+void calibrateWindows(void *pvParameters)
 {
+  for (;;)
+  {
+    if (millis() > 600000)
+    {
+      //  калибровка положения полного закрытия окон
+      if (Tepl1.getLevel() == 0)
+        Tepl1.setWindowlevel(-50);
+      if (Tepl2.getLevel() == 0)
+        Tepl2.setWindowlevel(-50);
+      if (Tepl3.getLevel() == 0)
+        Tepl3.setWindowlevel(-50);
+    }
+    vTaskDelay(pdMS_TO_TICKS(7200000));
+  }
+  vTaskDelete(NULL);
+}
+
+// парсинг полученых данных от дисплея Nextion
+void onHMIEvent(String &messege, String &data, String &response)
+{
+  // if (data.toInt() - 1 < 0 || data.toInt() - 1 > 2)
+  //   return;
 
   if (messege == "page0") //
   {
@@ -331,42 +369,21 @@ void onHMIEvent(String messege, String data, String response)
     arr_Tepl[data.toInt() - 1]->setMode(arr_Tepl[data.toInt() - 1]->getMode() == Teplica::AUTO ? Teplica::MANUAL : Teplica::AUTO);
     return;
   }
-
   else if (messege == "w") //  переключение режим теплица - проветривание
   {
     arr_Tepl[data.toInt() - 1]->setMode(Teplica::AIR);
     return;
   }
-
   else if (messege == "dh") //  переключение режим теплиц - осушение
   {
     arr_Tepl[data.toInt() - 1]->setMode(Teplica::DECREASE_IN_HUMIDITY);
     return;
   }
-
   else if (messege == "pump") //
   {
     arr_Tepl[data.toInt() - 1]->setPump(!arr_Tepl[data.toInt() - 1]->getPump());
     return;
   }
-
-  // тестирование работы задвижек
-  else if (messege == "tval1") //
-  {
-    heat.setTestRelay(heat.getValve1(), heat.getStatusRelay(heat.getValve1()) ? OFF : ON);
-    return;
-  }
-  else if (messege == "tval2") //
-  {
-    heat.setTestRelay(heat.getValve2(), heat.getStatusRelay(heat.getValve2()) ? OFF : ON);
-    return;
-  }
-  else if (messege == "tval3") //
-  {
-    heat.setTestRelay(heat.getValve3(), heat.getStatusRelay(heat.getValve3()) ? OFF : ON);
-    return;
-  }
-
   else if (messege == "set") //
   {
     pars_str_set(data);
@@ -398,6 +415,7 @@ void onHMIEvent(String messege, String data, String response)
     return;
   }
 }
+
 
 void pars_str_set(String &str)
 {
@@ -431,22 +449,24 @@ void pars_str_set(String &str)
   flash.putUInt(String("Opentwin" + String(arr_set[0])).c_str(), arr_set[6]);
 }
 
+
 void pars_str_adr(String &str)
 {
-  
   int j = 0;
   String st = "";
   if (str.isEmpty())
     return;
-      
+
   flash.putString("adr", str);
-  
+
   for (int i = 0; i < str.length(); i++)
   {
     if (str.charAt(i) == '.')
     {
       arr_adr[j] = st.toInt();
-      Serial.println(arr_adr[j]);
+    
+      // Serial.println(arr_set[j]);
+
       j++;
       st = "";
     }
@@ -498,9 +518,7 @@ void saveOutModBusArr()
     slaveWiFi.Ireg(WiFiheat1 + i, t->getHeat());
     slaveWiFi.Ireg(WiFisetpump1 + i, t->getSetPump());
     slaveWiFi.Ireg(WiFitemperature1 + i, t->getTemperature());
-    
     slaveWiFi.Ireg(WiFihumidity1 + i, t->getHumidity());
-
     slaveWiFi.Ireg(WiFierror1 + i, t->getSensorStatus());
     slaveWiFi.Ireg(WiFiLevel1 + i, t->getLevel());
     slaveWiFi.Ireg(WiFisetwindow1 + i, t->getSetWindow());
@@ -518,28 +536,31 @@ void saveOutModBusArr()
 
 void update_WiFiConnect(void *pvParameters)
 {
-  /*----настройка Wi-Fi---------*/
   for (;;)
   {
     int counter_WiFi = 0;
-    while (WiFi.status() != WL_CONNECTED && counter_WiFi < 10)
+    while (WiFi.status() != WL_CONNECTED && counter_WiFi < 100)
     {
       WiFi.disconnect();
       WiFi.reconnect();
       // Serial.println("Reconecting to WiFi..");
       counter_WiFi++;
-      delay(1000);
+      delay(100);
     }
-    if (WiFi.status() == WL_CONNECTED)
-      Serial.printf("Connect to:\t%s\n", ssid);
-    else
-      Serial.printf("Dont connect to: %s\n", ssid);
+
+    if (WiFi.status() != WL_CONNECTED)
+      {
+        const char* ssid = "yastrebovka";
+        const char* password = "zerNo32_";
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(ssid, password);
+      }
     vTaskDelay(pdMS_TO_TICKS(10 * 60 * 1000));
   }
   vTaskDelete(NULL);
 }
 
-/*--------------------------------------- изменения параметров с компьютера ------------------------------------*/
+//  изменения параметров с компьютера
 void controlScada()
 {
   int number = 0xfff;
@@ -600,34 +621,39 @@ void controlScada()
   flash.putUInt(String("Opentwin" + String(arr_Tepl[number]->getId())).c_str(), slave.Hreg(wifi_time_open_windows_1 + k));
 }
 
-String calculateTimeWork()
+void calculateTimeWork(String &str)
 {
-  String str = "\nDuration of work: ";
-  unsigned long currentMillis = millis();
-  unsigned long seconds = currentMillis / 1000;
+  // String str = "\nDuration of work: ";
+  // String str = "";
+  unsigned long seconds = millis() / 1000;
   unsigned long minutes = seconds / 60;
   unsigned long hours = minutes / 60;
   unsigned long days = hours / 24;
-  currentMillis %= 1000;
   seconds %= 60;
   minutes %= 60;
   hours %= 24;
 
   if (days > 0)
   {
-    str += String(days) + " d ";
-    str += String(hours) + " h ";
+    str += String(days) + " day ";
+    str += String(hours) + " hour ";
     str += String(minutes) + " min ";
   }
   else if (hours > 0)
   {
-    str += String(hours) + " h ";
+    str += String(hours) + " hour ";
     str += String(minutes) + " min ";
   }
   else if (minutes > 0)
+  {
     str += String(minutes) + " min ";
-  str += String(seconds) + " sec";
-  return str;
+    str += String(seconds) + " sec";
+  }
+  else
+  {
+    str += String(seconds) + " sec";
+  }
+  // return str;
 }
 
 // регулировка окон
@@ -639,63 +665,64 @@ void updateGreenHouse(void *pvParameters)
     {
       int level_window_tmp = t->getLevel();
 
-      if (t->getSensorStatus() == Teplica::NO_ERROR && t->getThereAreWindows())
+      if (t->getSensorStatus() == Teplica::NO_ERROR)
       {
         t->regulationWindow(t->getTemperature());
       }
       if (level_window_tmp != t->getLevel())
       {
-        flash.putUInt(String("LevelWindow" + String(t->getId())).c_str(), t->getLevel()); // запись уровня открытия окна при его изменении.
-        // Serial.printf("\nТеплица %d : %d", t->getId(), t->getLevel());
+        flash.putUInt(("LevelWindow" + t->getId()), t->getLevel()); // запись уровня открытия окна при его изменении.
+        log_e("Теплица %d окно: ---> %d%", t->getId(), t->getLevel());
+        log_e("--->%d", flash.getUInt(("LevelWindow" + t->getId()), 0));
       }
     }
     vTaskDelay(TIME_UPDATE_GREENOOUSE * 60 * 1000 / portTICK_PERIOD_MS);
   }
+  vTaskDelete(NULL);
 }
 
 // вывод данных теплицы 1
 void indiTepl1()
 {
-  hmi.inditepl1(Tepl1, heat);
+  hmi.inditepl1(Tepl1);
 }
 
 // вывод данных теплицы 2
 void indiTepl2()
 {
-  hmi.inditepl2(Tepl2, heat);
+  hmi.inditepl2(Tepl2);
 }
 
 // вывод данных теплицы 3
 void indiTepl3()
 {
-  hmi.inditepl3(Tepl3, heat);
-}
-
-// вывод данных о работе дизельного обогревателя
-void indiGas()
-{
-  // идикация состояния компрессора
-  hmi("gm0.en", heat.getSatusHeat() ? 1 : 0);
-  // идикация состояния задвижек
-  hmi("p8.pic", heat.getStatusRelay(heat.getValve1()) ? 12 : 11);
-  hmi("p9.pic", heat.getStatusRelay(heat.getValve2()) ? 12 : 11);
-  hmi("p10.pic", heat.getStatusRelay(heat.getValve3()) ? 12 : 11);
+  hmi.inditepl3(Tepl3);
 }
 
 // окно установок теплиц
 void pageNextion_p1(int i)
 {
-  String err = "";
+  String err{};
   if (mb11016p.getError())
-    err = "MB16R: " + String(mb11016p.getError());
+    err = "mb16: " + String(mb11016p.getError());
   if (mbsl8di8ro.getError())
-    err += " MBSL8di8ro: " + String(mbsl8di8ro.getError());
-  if (!err.length())
-    err = "Mb adress: " + String(IDSLAVE) + " | " + "\nRSSI: " + String(WiFi.RSSI()) + " | " + WiFi.localIP().toString();
+    err += " mdsl8: " + String(mbsl8di8ro.getError());
+  // if (!err.length())
+  {
+    err += " adr:";
+    err += IDSLAVE;
+    err += " ";
+    err += ssid;
+    err += " ";
+    err += WiFi.RSSI();
+    err += " ";
+    err += WiFi.localIP().toString();
+  }
 
   coun1++;
   hmi.hmi_p1(*arr_Tepl[i], err, coun1);
 }
+
 
 void pageNextion_p2()
 {
@@ -740,8 +767,8 @@ void pageNextion_p3()
     hmi("p3.n0.val", flash.getInt("heat_adr", 102));
     coun1++;
   }
-  indiGas();
 }
+
 
 void update_mbmaster()
 {
@@ -752,118 +779,29 @@ void update_mbmaster()
   }
 }
 
+
 void wifiInit()
 {
-  EEPROM.begin(100);
-  EEPROM.get(0, lp);
-
-  // пытаемся подключиться
-  Serial.print("Connect to: ");
-  Serial.println(ssid.c_str());
+  log_e("Connect to: %s", ssid);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid.c_str(), password.c_str());
+  WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED && millis() < 30000)
   {
-    delay(500);
-    Serial.print(".");
+    yield();
   }
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.println();
-    Serial.print("Connected! Local IP: ");
-    Serial.println(WiFi.localIP());
-  }
-  else
-  {
-    loginPortal();
+    log_e("Local IP: ---> %s", WiFi.localIP().toString());
   }
 }
 
-void loginPortal()
-{
-  Serial.println("\nPortal start");
-  // String res{};
-  // {
-  //   WiFi.disconnect();
-  //   int counterWiFi = WiFi.scanNetworks();
-  //   for (auto i = 0; i < counterWiFi; i++)
-  //   {
-  //     res += WiFi.SSID(i).c_str();
-  //     res += ',';
-  //   }
-  // }
-   WiFi.mode(WIFI_AP);
-    // WiFi.softAP("Tepl1_3");
-    WiFi.begin("Tepl_1-3", password.c_str());
-    Serial.println(WiFi.softAPIP()); // по умолч. 192.168.4.1
-  // запускаем портал
-  GyverPortal ui;
-  ui.attachBuild(buildLoginPage);
-  ui.start();
-  ui.attach(action);
-  // работа портала
-  while (ui.tick())
-  {
-    if (millis() > 40000)
-      return;
-  }
-  Serial.println();
-  Serial.println("Exit portal");
-}
-
-void buildLoginPage()
-{
-  GP.BUILD_BEGIN();
-  GP.THEME(GP_DARK);
-  GP.FORM_BEGIN("/login");
-  GP.TEXT("lg", "Login", lp.ssid);
-  GP.BREAK();
-  GP.PASS("ps", "Password", lp.pass);
-  GP.SUBMIT("Submit");
-  GP.FORM_END();
-  GP.BUILD_END();
-}
-
-void buildLoginPage(String wifi)
-{
-  int wifinumder = 0;
-  GP.BUILD_BEGIN();
-  GP.THEME(GP_DARK);
-  GP.FORM_BEGIN("/login");
-  GP.SELECT("lg", wifi, wifinumder);
-  for (auto i = 0; i < 20; i++)
-  {
-    lp.ssid[i] = 0;
-  }
-  for (auto i = 0; i < WiFi.SSID(wifinumder).length(); i++)
-  {
-    lp.ssid[i] = WiFi.SSID(wifinumder)[i];
-  }
-  GP.BREAK();
-  GP.PASS("ps", "Password", lp.pass);
-  GP.SUBMIT("Submit");
-  GP.FORM_END();
-  GP.BUILD_END();
-}
-
-void action(GyverPortal &p)
-{
-  if (p.form("/login"))
-  {                           // кнопка нажата
-    p.copyStr("lg", lp.ssid); // копируем себе
-    p.copyStr("ps", lp.pass);
-    EEPROM.put(0, lp);       // сохраняем
-    EEPROM.commit();         // записываем
-    WiFi.softAPdisconnect(); // отключаем AP
-  }
-}
 
 void buildPage()
 {
   GP.BUILD_BEGIN(1200);
   GP.THEME(GP_DARK);
   GP.PAGE_TITLE("Теплицы 1-3");
-  GP.UPDATE("t1,h1,s1,t2,h2,s2,t3,h3,s3,win1,win2,win3,uh1,up1,ut1,uh2,up2,ut2,uh3,up3,ut3,pump1,pump2,pump3,mode1,mode2,mode3");
+  GP.UPDATE("t1,h1,s1,t2,h2,s2,t3,h3,s3,win1,win2,win3,uh1,up1,ut1,uh2,up2,ut2,uh3,up3,ut3,pump1,pump2,pump3,mode1,mode2,mode3,timeWork");
   // позволяет "отключить" таблицу при ширине экрана меньше 700px
   GP.GRID_RESPONSIVE(600);
   GP.NAV_TABS("Мониторинг,Настройка");
@@ -875,23 +813,25 @@ void buildPage()
           "Теплица 1", "", GP_GRAY_B,
           M_BOX(GP.LABEL("Т, °C"); GP.TEXT("t1", String(Tepl1.getTemperature() / 100.0, 1), "", "75px"); GP.LABEL("H, %"); GP.TEXT("h1", String(Tepl1.getHumidity() / 100), "", "75px"););
           M_BOX(GP.LABEL("Авария"); GP.LED_RED("s1", 0););
-          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win1", 0, 0, 100, 1, 0, "", 0, 0););
-          M_BOX(GP.TEXT("uh1", String(Tepl1.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up1", String(Tepl1.getSetPump() / 100.0, 1), "", "75px");GP.TEXT("ut1", String(Tepl1.getSetWindow() / 100.0, 1), "", "75px"););
+          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win1", 0, 0, 100, 1, 0, GP_CYAN_B, 1, 0););
+          M_BOX(GP.TEXT("uh1", String(Tepl1.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up1", String(Tepl1.getSetPump() / 100.0, 1), "", "75px"); GP.TEXT("ut1", String(Tepl1.getSetWindow() / 100.0, 1), "", "75px"););
           M_BOX(GP.LABEL("Режим"); GP.TEXT("mode1", "AUTO"); GP.LABEL("Насос"); GP.LED_GREEN("pump1", 0);););
       M_BLOCK_TAB(
           "Теплица 2", "", GP_GRAY_B,
           M_BOX(GP.LABEL("Т, °C"); GP.TEXT("t2", String(Tepl2.getTemperature() / 100.0, 1), "", "75px"); GP.LABEL("H, %"); GP.TEXT("h2", String(Tepl2.getHumidity() / 100), "", "75px"););
           M_BOX(GP.LABEL("Авария"); GP.LED_RED("s2", 0););
-          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win2", 0, 0, 100, 1, 0, "", 1, 0););
-          M_BOX(GP.TEXT("uh2", String(Tepl2.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up2", String(Tepl2.getSetPump() / 100.0, 1), "", "75px");GP.TEXT("ut2", String(Tepl2.getSetWindow() / 100.0, 1), "", "75px"););
+          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win2", 0, 0, 100, 1, 0, GP_CYAN_B, 1, 0););
+          M_BOX(GP.TEXT("uh2", String(Tepl2.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up2", String(Tepl2.getSetPump() / 100.0, 1), "", "75px"); GP.TEXT("ut2", String(Tepl2.getSetWindow() / 100.0, 1), "", "75px"););
           M_BOX(GP.LABEL("Режим"); GP.TEXT("mode2", "AUTO"); GP.LABEL("Насос"); GP.LED_GREEN("pump2", 0);););
       M_BLOCK_TAB(
           "Теплица 3", "", GP_GRAY_B,
           M_BOX(GP.LABEL("Т, °C"); GP.TEXT("t3", String(Tepl3.getTemperature() / 100.0, 1), "", "75px"); GP.LABEL("H, %"); GP.TEXT("h3", String(Tepl3.getHumidity() / 100), "", "75px"););
           M_BOX(GP.LABEL("Авария"); GP.LED_RED("s3", 0););
-          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win3", 0, 0, 100, 1, 0, "", 1, 0););
-          M_BOX(GP.TEXT("uh3", String(Tepl3.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up3", String(Tepl3.getSetPump() / 100.0, 1), "", "75px");GP.TEXT("ut3", String(Tepl3.getSetWindow() / 100.0, 1), "", "75px"););
+          M_BOX(GP.LABEL("Окно"); GP.SLIDER("win3", 0, 0, 100, 1, 0, GP_CYAN_B, 1, 0););
+          M_BOX(GP.TEXT("uh3", String(Tepl3.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up3", String(Tepl3.getSetPump() / 100.0, 1), "", "75px"); GP.TEXT("ut3", String(Tepl3.getSetWindow() / 100.0, 1), "", "75px"););
           M_BOX(GP.LABEL("Режим"); GP.TEXT("mode3", "AUTO"); GP.LABEL("Насос"); GP.LED_GREEN("pump3", 0););););
+  GP.LABEL("Время работы: ");
+  GP.TEXT("timeWork", "");
   GP.NAV_BLOCK_END();
   GP.NAV_BLOCK_BEGIN();
   M_GRID(
@@ -907,20 +847,20 @@ void buildPage()
           "Теплица 3", "", GP_GRAY_B,
           M_BOX(GP.LABEL("Адрес:"); GP.SPINNER("adr3", Tepl3.getAdressT(), 1, 250););
           M_BOX(GP.LABEL("Кор T, °C:"); GP.SPINNER("corT3", Tepl3.getCorrectionTemp() / 100.0, -2.0, 2.0, 0.1, 1););););
-  
+
   int sp{};
   switch (flash.getInt("mspeed", 2400))
   {
   case 2400:
-   sp = 1;
+    sp = 1;
     break;
   case 9600:
-   sp = 2;
+    sp = 2;
     break;
   case 19200:
-   sp = 3;
+    sp = 3;
     break;
-  
+
   default:
     break;
   }
@@ -928,18 +868,19 @@ void buildPage()
   GP.NAV_BLOCK_END();
   GP.FORM_END();
 
-  GP.AJAX_PLOT_DARK("plot", names, 3, 1800, 1800, 300);
+  GP.AJAX_PLOT_DARK("plot", names, 3, 1800, 60000, 300);
   GP.BUILD_END();
 }
+
 
 void actionPage()
 {
 
   if (ui.update("plot"))
   {
-    int answ[] = {round(Tepl1.getTemperature() / 100.0),
-                  round(Tepl2.getTemperature() / 100.0),
-                  round(Tepl3.getTemperature() / 100.0)};
+    int answ[] = {static_cast<int>(round(Tepl1.getTemperature() / 100.0)),
+                  static_cast<int>(round(Tepl2.getTemperature() / 100.0)),
+                  static_cast<int>(round(Tepl3.getTemperature() / 100.0))};
     ui.answer(answ, 3);
   }
 
@@ -988,7 +929,7 @@ void actionPage()
     case 3:
       str_mode = "ОСУШЕНИЕ";
       break;
-    
+
     default:
       break;
     }
@@ -997,7 +938,7 @@ void actionPage()
     if (Tepl2.getSensorStatus() == Sensor_WB_v_3::NO_ERROR)
     {
       t = String(Tepl2.getTemperature() / 100.0, 1);
-      h = String(Tepl2.getHumidity() / 100);
+      h = Tepl2.getHumidity() / 100;
       st = false;
     }
     else
@@ -1009,6 +950,34 @@ void actionPage()
     ui.updateString("t2", t);
     ui.updateString("h2", h);
     ui.updateBool("s2", st);
+    t = String(Tepl2.getSetHeat() / 100.0, 1);
+    ui.updateString("uh2", t);
+    t = String(Tepl2.getSetPump() / 100.0, 1);
+    ui.updateString("up2", t);
+    t = String(Tepl2.getSetWindow() / 100.0, 1);
+    ui.updateString("ut2", t);
+    ui.updateInt("win2", Tepl2.getLevel());
+    ui.updateBool("pump2", Tepl2.getPump());
+    mod = Tepl2.getMode();
+    switch (mod)
+    {
+    case 0:
+      str_mode = "АВТО";
+      break;
+    case 1:
+      str_mode = "РУЧНОЙ";
+      break;
+    case 2:
+      str_mode = "ПРОВЕТРИВАНИЕ";
+      break;
+    case 3:
+      str_mode = "ОСУШЕНИЕ";
+      break;
+
+    default:
+      break;
+    }
+    ui.updateString("mode2", str_mode);
 
     if (Tepl3.getSensorStatus() == Sensor_WB_v_3::NO_ERROR)
     {
@@ -1025,51 +994,99 @@ void actionPage()
     ui.updateString("t3", t);
     ui.updateString("h3", h);
     ui.updateBool("s3", st);
+    t = String(Tepl3.getSetHeat() / 100.0, 1);
+    ui.updateString("uh3", t);
+    t = String(Tepl3.getSetPump() / 100.0, 1);
+    ui.updateString("up3", t);
+    t = String(Tepl3.getSetWindow() / 100.0, 1);
+    ui.updateString("ut3", t);
+    ui.updateInt("win3", Tepl3.getLevel());
+    ui.updateBool("pump3", Tepl3.getPump());
+    mod = Tepl3.getMode();
+    switch (mod)
+    {
+    case 0:
+      str_mode = "АВТО";
+      break;
+    case 1:
+      str_mode = "РУЧНОЙ";
+      break;
+    case 2:
+      str_mode = "ПРОВЕТРИВАНИЕ";
+      break;
+    case 3:
+      str_mode = "ОСУШЕНИЕ";
+      break;
+
+    default:
+      break;
+    }
+    ui.updateString("mode3", str_mode);
+
+    String time{};
+    calculateTimeWork(time);
+    ui.updateString("timeWork", time);
   }
 
   if (ui.form("/seting"))
   {
-      String set{};
-      int answ{};
-      float t{};
+    String set{};
+    int answ{};
+    float t{};
 
-      ui.copyInt("adr1", answ);
-      set += String(answ) + ".";
-      ui.copyFloat("corT1", t);
-      set += String(t * 10, 0) + ".";
+    ui.copyInt("adr1", answ);
+    set += String(answ) + ".";
+    ui.copyFloat("corT1", t);
+    set += String(t * 10, 0) + ".";
 
-      ui.copyInt("adr2", answ);
-      set += String(answ) + ".";
-      ui.copyFloat("corT2", t);
-      set += String(t * 10, 0) + ".";
+    ui.copyInt("adr2", answ);
+    set += String(answ) + ".";
+    ui.copyFloat("corT2", t);
+    set += String(t * 10, 0) + ".";
+
+    ui.copyInt("adr3", answ);
+    set += String(answ) + ".";
+    ui.copyFloat("corT3", t);
+    set += String(t * 10, 0) + ".";
+
+    pars_str_adr(set);
+    int speed{};
+    ui.copyInt("ms", answ);
+    switch (answ)
+    {
+    case 1:
+      speed = 2400;
+      break;
+    case 2:
+      speed = 9600;
+      break;
+    case 3:
+      speed = 19200;
+      break;
+
+    default:
+      break;
+    }
   
-      ui.copyInt("adr3", answ);
-      set += String(answ) + ".";
-      ui.copyFloat("corT3", t);
-      set += String(t * 10, 0) + ".";
+    flash.putInt("mspeed", speed);
+    MbMasterSerial.end();
+    MbMasterSerial.begin(speed, SERIAL_8N1, RXDMASTER, TXDMASTER, false); // Modbus Master
+    Serial.println(set);
+  }
+}
 
-      pars_str_adr(set);
-      int speed{};
-      ui.copyInt("ms", answ);
-      switch (answ)
-      {
-      case 1:
-        speed = 2400;
-        break;
-      case 2:
-        speed = 9600;
-        break;
-      case 3:
-        speed = 19200;
-        break;
-      
-      default:
-        break;
-      }
 
-      flash.putInt("mspeed", speed);
-      MbMasterSerial.end();
-      MbMasterSerial.begin(speed, SERIAL_8N1, RXDMASTER, TXDMASTER, false); // Modbus Master
-      Serial.println(set);
-  }  
+void viewLoop()
+{
+  String time{};
+  calculateTimeWork(time);
+  printf("\nВремя работы, сек %d ---> %s \n", millis() / 1000, time);
+  // Полный размер кучи в памяти
+  printf("Общий размер ВСТРОЕННОЙ памяти:     %u\n", ESP.getHeapSize());
+  // Количество доступной кучи в памяти
+  printf("Оставшаяся доступная память в куче: %u\n", ESP.getFreeHeap());
+  // Размер общей кучи SPI PSRAM
+  printf("Общий размер SPI PSRAM:             %u\n", ESP.getPsramSize());
+  // Количество свободной PSRAM
+  printf("Количество свободной PSRAM:         %d\n", ESP.getFreePsram());
 }

@@ -5,7 +5,6 @@
 
 #include <WiFi.h>
 #include <SoftwareSerial.h>
-#include <Bounce2.h>
 #include <ModbusRTU.h>
 #include <ModbusIP_ESP8266.h>
 #include <WiFi.h>
@@ -14,20 +13,19 @@
 #include <FreeRTOSConfig.h>
 #include <SPIFFS.h>
 #include <GyverPortal.h>
-#include <EEPROM.h>
+// #include <StringN.h>
+// #include <EEPROM.h>
 
 #include "MB11016P_ESP.h"
-#include "heat.h"
+// #include "heat.h"
 #include "Teplica.h"
-#include "NEXTION.h"
+#include "Nextion.h"
 #include "SoilSensor.h"
 
 Preferences flash;
 
 #define RXDNEX 23 // плата в теплице
 #define TXDNEX 22 // плата в теплице
-// static const int RXDNEX = 19; // тестовая плата
-// static const int TXDNEX = 23; // тестовая плата
 
 #define RXDMASTER 25
 #define TXDMASTER 33
@@ -40,33 +38,34 @@ const double RED = 55688;
 const double GREEN = 2016;
 const double BLUE = 1566;
 
-
 #define LittleFS SPIFFS
 GyverPortal ui(&LittleFS);
 
-#define DEBUG_WIFI
+// #define DEBUG_WIFI
 
-const String VER = "Ver - 4.0. Date - " + String(__DATE__) + "\r";
+const String VER = "Ver - 5.0. Date - " + String(__DATE__) + "\r";
 int IDSLAVE = 13; // адрес в сети Modbus
 
-String ssid = "yastrebovka";
-String password = "zerNo32_";
-struct LoginPass
-{
-  char ssid[20];
-  char pass[20];
-};
-const char *names[] = {"T1","T2","T3"};
-LoginPass lp;
+const char* ssid = "yastrebovka";
+const char* password = "zerNo32_";
 
+// const char* ssid = "Home-RP";
+// const char* password = "12rp1974";
+// struct LoginPass
+// {
+//   char ssid[20];
+//   char pass[20];
+// };
+const char *names[] = {"T1", "T2", "T3"};
+// LoginPass lp;
 
 const uint32_t AIRTIME = 1200000; // длительность проветривания и осушения
 
 const uint TIME_UPDATE_GREENOOUSE = 4;     // период регулировки окон теплиц, мин
 const uint TIME_UPDATE_MODBUS_MB110 = 5;   // период обновления данных для блока реле, сек
 const uint TIME_UPDATE_MODBUS_SENSOR = 20; // период обновления данных от датчиков, сек
-const uint TIME_UPDATE_WATER_SENSOR = 300;   // период обновления данных от датчиков температуры теплоносителя, сек
-const uint TIME_UPDATE_HMI = 200;         // период обновления данных на дисплее, мсек
+const uint TIME_UPDATE_WATER_SENSOR = 300; // период обновления данных от датчиков температуры теплоносителя, сек
+const uint TIME_UPDATE_HMI = 200;          // период обновления данных на дисплее, мсек
 
 SoftwareSerial SerialNextion;
 
@@ -114,9 +113,8 @@ enum
   WiFiSoilSensorT1,    //  температура почвы 1
   WiFiSoilSensorH1,    //  влажность почвы 1
   WiFiSoilSensorC1,    //  Conductivity(EC) проводимость почвы 1
-  WiFiSoilSensorS1,   //  salinity соленость почвы 1
-  WiFiSoilSensorTDS1,    //  TDS почвы 1
-
+  WiFiSoilSensorS1,    //  salinity соленость почвы 1
+  WiFiSoilSensorTDS1,  //  TDS почвы 1
 
   WiFimode2,          //  режим работы теплица 2
   WiFipump2,          //  насос 2
@@ -130,11 +128,11 @@ enum
   WiFiLevel2,         //  уровень открытия окна теплица 2
   WiFiHysteresis2,    // гистерезис насосов теплица 2
   WiFiOpenTimeWindow, // время открытия окон теплица 2
-  WiFiSoilSensorT2,    //  температура почвы 2
-  WiFiSoilSensorH2,    //  влажность почвы 2
-  WiFiSoilSensorC2,    //  Conductivity(EC) проводимость почвы 2
+  WiFiSoilSensorT2,   //  температура почвы 2
+  WiFiSoilSensorH2,   //  влажность почвы 2
+  WiFiSoilSensorC2,   //  Conductivity(EC) проводимость почвы 2
   WiFiSoilSensorS2,   //  salinity соленость почвы 2
-  WiFiSoilSensorTDS2,    //  TDS почвы 2
+  WiFiSoilSensorTDS2, //  TDS почвы 2
 
   WiFimode3,           //  режим работы теплица 3
   WiFipump3,           //  насос 3
@@ -151,8 +149,8 @@ enum
   WiFiSoilSensorT3,    //  температура почвы 2
   WiFiSoilSensorH3,    //  влажность почвы 2
   WiFiSoilSensorC3,    //  Conductivity(EC) проводимость почвы 2
-  WiFiSoilSensorS3,   //  salinity соленость почвы 2
-  WiFiSoilSensorTDS3,    //  TDS почвы 2
+  WiFiSoilSensorS3,    //  salinity соленость почвы 2
+  WiFiSoilSensorTDS3,  //  TDS почвы 2
 
   WiFi_HOLDING_REGS_SIZE //  leave this one
 };
@@ -217,18 +215,12 @@ int coun1 = 0;
 int arr_adr[12];
 int arr_set[8];
 
-TaskHandle_t Task_updateGreenHouse;
-TaskHandle_t Task_updateDateSensor;
-TaskHandle_t Task_webSerialSend;
-
 ModbusRTU slave;
 ModbusIP slaveWiFi;
 ModbusRTU mb_master;
 
 MB11016P_ESP mb11016p = MB11016P_ESP(&mb_master, 100, 0);
 MB11016P_ESP mbsl8di8ro = MB11016P_ESP(&mb_master, 102, 0); // китайский блок реле (для управления пушкой и тепл.3)
-
-Heat heat = Heat(0, 1, 2, 3, &mbsl8di8ro);
 
 SoilSensor soil1(&mb_master, 1, 9600);
 Sensor_WB_v_3 Tepl1Temperature = Sensor_WB_v_3(4, 0, 0);
@@ -237,13 +229,9 @@ Sensor_WB_v_3 Tepl3Temperature = Sensor_WB_v_3(6, 0, 0);
 
 Sensor_WB_v_3 *sensors[3];
 
-Teplica Tepl1 = Teplica(1, &Tepl1Temperature, 0, heat.getValve1(), 9, 10, 30, 20, 40, 60, &mb11016p, &flash);
-Teplica Tepl2 = Teplica(2, &Tepl2Temperature, 4, heat.getValve2(), 5, 6, 30, 20, 40, 60, &mb11016p, &flash);
-Teplica Tepl3 = Teplica(3, &Tepl3Temperature, 4, heat.getValve3(), 5, 6, 30, 20, 40, 60, &mbsl8di8ro, &flash);
-
-// Teplica Tepl1 = Teplica(1, 0, 0, heat.getValve1(), 1, 2, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
-// Teplica Tepl2 = Teplica(2, 1, 4, heat.getValve2(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mb11016p, &heat);
-// Teplica Tepl3 = Teplica(3, 2, 4, heat.getValve3(), 5, 6, 900, 700, 11000, 60000, &mb1108a, &mbsl8di8ro, &heat);
+Teplica Tepl1 = Teplica(1, &Tepl1Temperature, 8, 9, 10, 30, 20, 40, 60, &mb11016p, &flash);
+Teplica Tepl2 = Teplica(2, &Tepl2Temperature, 4, 5, 6, 30, 20, 40, 60, &mb11016p, &flash);
+Teplica Tepl3 = Teplica(3, &Tepl3Temperature, 4, 5, 6, 30, 20, 40, 60, &mbsl8di8ro, &flash);
 
 Teplica *arr_Tepl[3];
 
@@ -259,45 +247,37 @@ enum Sensor_Modbus
   SIZE_SENSOR_MODBUS
 };
 
-uint16_t sensor[Sensor_Modbus::SIZE_SENSOR_MODBUS] {};
+uint16_t sensor[Sensor_Modbus::SIZE_SENSOR_MODBUS]{};
 
-// void pageNextion_p0();
 void pageNextion_p1(int i);
 void pageNextion_p2();
 void pageNextion_p3();
 void indiTepl1();
 void indiTepl2();
 void indiTepl3();
-void indiGas();
-// void indiOutDoor();
-// int indiRain();
 void pars_str_adr(String &str);
 void pars_str_set(String &str);
 void saveOutModBusArr();
 void controlScada();
-String calculateTimeWork();
+void calculateTimeWork(String &str);
 
 void updateGreenHouse(void *pvParameters);
 void updateMB(void *pvParameters);
 void update_WiFiConnect(void *pvParameters);
 void sendNextion(void *pvParameters);
 void readNextion(void *pvParameters);
-void onHMIEvent(String messege, String data, String response);
+void calibrateWindows(void *pvParameters);
+void tickWindows(void *pvParameters);
 
+void onHMIEvent(String &messege, String &data, String &response);
 void update_mbmaster();
-
 void wifiInit();
-void buildLoginPage();
-void buildLoginPage(String wifi);
-void loginPortal();
-void action(GyverPortal &p);
-
 void buildPage();
 void actionPage();
+void viewLoop();
 
 bool cbRead(Modbus::ResultCode event, uint16_t transactionId, void *data)
 {
-  // Serial.printf("result:\t0x%02X\n", event);
   sensor[Sensor_Modbus::mberror] = event;
   return true;
 }
