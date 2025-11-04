@@ -49,8 +49,8 @@ int IDSLAVE = 13; // адрес в сети Modbus
 const char* ssid = "yastrebovka";
 const char* password = "zerNo32_";
 
-// const char* ssid = "Home-RP";
-// const char* password = "12rp1974";
+const char* ssid_b = "Home-RP";
+const char* password_b = "12rp1974";
 // struct LoginPass
 // {
 //   char ssid[20];

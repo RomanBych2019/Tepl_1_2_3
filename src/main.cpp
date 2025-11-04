@@ -119,7 +119,7 @@ void setup()
   // считывание параметров установок теплиц из памяти
   for (int i = 0; i < 3; i++)
   {
-     uint t = flash.getUInt(String("SetPump" + String(arr_Tepl[i]->getId())).c_str(), 500);
+    uint t = flash.getUInt(String("SetPump" + String(arr_Tepl[i]->getId())).c_str(), 500);
     arr_Tepl[i]->setSetPump(t);
     t = flash.getUInt(String("SetHeat" + String(arr_Tepl[i]->getId())).c_str(), 300);
     arr_Tepl[i]->setSetHeat(t);
@@ -132,7 +132,7 @@ void setup()
   }
 
   incStr = flash.getString("adr", "");
-  
+
   pars_str_adr(incStr);
 
   for (Teplica *t : arr_Tepl)
@@ -216,7 +216,6 @@ void loop()
   controlScada();
 }
 
-
 void readNextion(void *pvParameters)
 {
   for (;;)
@@ -226,7 +225,6 @@ void readNextion(void *pvParameters)
   }
   vTaskDelete(NULL);
 }
-
 
 void tickWindows(void *pvParameters)
 {
@@ -246,7 +244,6 @@ void tickWindows(void *pvParameters)
   }
   vTaskDelete(NULL);
 }
-
 
 void sendNextion(void *pvParameters)
 {
@@ -416,7 +413,6 @@ void onHMIEvent(String &messege, String &data, String &response)
   }
 }
 
-
 void pars_str_set(String &str)
 {
   int j = 0;
@@ -449,7 +445,6 @@ void pars_str_set(String &str)
   flash.putUInt(String("Opentwin" + String(arr_set[0])).c_str(), arr_set[6]);
 }
 
-
 void pars_str_adr(String &str)
 {
   int j = 0;
@@ -464,7 +459,7 @@ void pars_str_adr(String &str)
     if (str.charAt(i) == '.')
     {
       arr_adr[j] = st.toInt();
-    
+
       // Serial.println(arr_set[j]);
 
       j++;
@@ -549,12 +544,12 @@ void update_WiFiConnect(void *pvParameters)
     }
 
     if (WiFi.status() != WL_CONNECTED)
-      {
-        const char* ssid = "yastrebovka";
-        const char* password = "zerNo32_";
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(ssid, password);
-      }
+    {
+      const char *ssid = "yastrebovka";
+      const char *password = "zerNo32_";
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(ssid, password);
+    }
     vTaskDelay(pdMS_TO_TICKS(10 * 60 * 1000));
   }
   vTaskDelete(NULL);
@@ -712,7 +707,7 @@ void pageNextion_p1(int i)
     err += " adr:";
     err += IDSLAVE;
     err += " ";
-    err += ssid;
+    err += WiFi.SSID();
     err += " ";
     err += WiFi.RSSI();
     err += " ";
@@ -722,7 +717,6 @@ void pageNextion_p1(int i)
   coun1++;
   hmi.hmi_p1(*arr_Tepl[i], err, coun1);
 }
-
 
 void pageNextion_p2()
 {
@@ -769,7 +763,6 @@ void pageNextion_p3()
   }
 }
 
-
 void update_mbmaster()
 {
   unsigned long t = millis() + 420;
@@ -779,29 +772,28 @@ void update_mbmaster()
   }
 }
 
-
 void wifiInit()
 {
-  log_e("Connect to: %s", ssid);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED && millis() < 30000)
-  {
+  while (WiFi.status() != WL_CONNECTED && millis() < 20000)
     yield();
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    WiFi.begin(ssid_b, password_b);
+    while (WiFi.status() != WL_CONNECTED)
+      yield();
   }
   if (WiFi.status() == WL_CONNECTED)
-  {
-    log_e("Local IP: ---> %s", WiFi.localIP().toString());
-  }
+    log_e("Connect to: %s, local IP: %s", WiFi.SSID(), WiFi.localIP().toString());
 }
-
 
 void buildPage()
 {
   GP.BUILD_BEGIN(1200);
   GP.THEME(GP_DARK);
   GP.PAGE_TITLE("Теплицы 1-3");
-  GP.UPDATE("t1,h1,s1,t2,h2,s2,t3,h3,s3,win1,win2,win3,uh1,up1,ut1,uh2,up2,ut2,uh3,up3,ut3,pump1,pump2,pump3,mode1,mode2,mode3,timeWork");
+  GP.UPDATE("t1,h1,s1,t2,h2,s2,t3,h3,s3,win1,win2,win3,uh1,up1,ut1,uh2,up2,ut2,uh3,up3,ut3,pump1,pump2,pump3,mode1,mode2,mode3,timeWork,rssi");
   // позволяет "отключить" таблицу при ширине экрана меньше 700px
   GP.GRID_RESPONSIVE(600);
   GP.NAV_TABS("Мониторинг,Настройка");
@@ -830,8 +822,7 @@ void buildPage()
           M_BOX(GP.LABEL("Окно"); GP.SLIDER("win3", 0, 0, 100, 1, 0, GP_CYAN_B, 1, 0););
           M_BOX(GP.TEXT("uh3", String(Tepl3.getSetHeat() / 100.0, 1), "", "75px"); GP.TEXT("up3", String(Tepl3.getSetPump() / 100.0, 1), "", "75px"); GP.TEXT("ut3", String(Tepl3.getSetWindow() / 100.0, 1), "", "75px"););
           M_BOX(GP.LABEL("Режим"); GP.TEXT("mode3", "AUTO"); GP.LABEL("Насос"); GP.LED_GREEN("pump3", 0););););
-  GP.LABEL("Время работы: ");
-  GP.TEXT("timeWork", "");
+  M_BOX(GP.LABEL("Время работы: "); GP.TEXT("timeWork", ""); GP.LABEL("RSSI: "); GP.TEXT("rssi", ""));
   GP.NAV_BLOCK_END();
   GP.NAV_BLOCK_BEGIN();
   M_GRID(
@@ -871,7 +862,6 @@ void buildPage()
   GP.AJAX_PLOT_DARK("plot", names, 3, 1800, 60000, 300);
   GP.BUILD_END();
 }
-
 
 void actionPage()
 {
@@ -1026,6 +1016,8 @@ void actionPage()
     String time{};
     calculateTimeWork(time);
     ui.updateString("timeWork", time);
+    String rssi = String(WiFi.RSSI());
+    ui.updateString("rssi", rssi);
   }
 
   if (ui.form("/seting"))
@@ -1067,14 +1059,13 @@ void actionPage()
     default:
       break;
     }
-  
+
     flash.putInt("mspeed", speed);
     MbMasterSerial.end();
     MbMasterSerial.begin(speed, SERIAL_8N1, RXDMASTER, TXDMASTER, false); // Modbus Master
     Serial.println(set);
   }
 }
-
 
 void viewLoop()
 {
